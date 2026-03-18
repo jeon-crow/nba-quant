@@ -886,6 +886,10 @@ const CFG = {
   nba:  { injuries:'https://data.nba.com/data/10s/v2015/json/mobile_teams/nba/2025/league/00_injuries.json', scoreboard:'https://stats.nba.com/stats/scoreboardv2?DayOffset=0&LeagueID=00&gameDate=' }
 };
 
+// ── CORS PROXY (required for GitHub Pages / any static host) ──
+const PROXY = 'https://corsproxy.io/?';
+function proxied(url){ return PROXY + encodeURIComponent(url); }
+
 // ── MODEL WEIGHTS (configurable via Settings) ──
 let MW = JSON.parse(localStorage.getItem('modelWeights')||'null') || { netRating:0.35, recency:0.20, injury:0.15, referee:0.05, home:0.10, rest:0.10, timing:0.05 };
 function saveWeights(){ localStorage.setItem('modelWeights', JSON.stringify(MW)); }
@@ -1454,7 +1458,7 @@ function isNBA(t){ const l=t.toLowerCase(); return NBA_KW.some(k=>l.includes(k))
 async function fetchPolymarket(){
   setStatus('Polymarket','conn','Polymarket · Connecting…');
   try {
-    const data=await apiFetch(`${CFG.pm.gamma}/markets?active=true&limit=50&closed=false`,{},9000);
+    const data=await apiFetch(proxied(`${CFG.pm.gamma}/markets?active=true&limit=50&closed=false`),{},9000);
     const raw=data.markets||data||[];
     const nba=raw.filter(m=>isNBA(m.question||m.title||''));
     if(!nba.length) throw new Error('No NBA markets');
@@ -1463,8 +1467,8 @@ async function fetchPolymarket(){
       const tid=m.clob_token_ids?.[0]||m.condition_id; if(!tid)return m;
       try {
         const [mid,book]=await Promise.all([
-          apiFetch(`${CFG.pm.clob}/midpoint?token_id=${tid}`,{},4000),
-          apiFetch(`${CFG.pm.clob}/book?token_id=${tid}`,{},4000)
+          apiFetch(proxied(`${CFG.pm.clob}/midpoint?token_id=${tid}`),{},4000),
+          apiFetch(proxied(`${CFG.pm.clob}/book?token_id=${tid}`),{},4000)
         ]);
         const ask=book.asks?.[0]?.price??null, bid=book.bids?.[0]?.price??null;
         return {...m,liveMid:mid.mid||null,spread:ask&&bid?ask-bid:null,bestAsk:ask,bestBid:bid};
@@ -1487,7 +1491,7 @@ async function fetchPolymarket(){
 async function fetchNBAInjuries(){
   setStatus('Injuries','conn','NBA Injuries · Fetching…');
   let data=null;
-  for(const url of [CFG.nba.injuries,`https://corsproxy.io/?${encodeURIComponent(CFG.nba.injuries)}`]){
+  for(const url of [CFG.nba.injuries, proxied(CFG.nba.injuries)]){
     try{ data=await apiFetch(url,{},8000); break; }catch{}
   }
   if(!data){ setStatus('Injuries','err','NBA Injuries · CORS blocked'); return; }
@@ -1530,7 +1534,8 @@ async function fetchOddsAPI(){
   if(!CFG.odds.key){setStatus('Odds','idle','The Odds API · No key');renderOddsTable([]);return;}
   setStatus('Odds','conn','The Odds API · Fetching…');
   try {
-    const data=await apiFetch(`${CFG.odds.base}/sports/basketball_nba/odds?apiKey=${CFG.odds.key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel,pinnacle,betmgm`,{},10000);
+    const oddsUrl=`${CFG.odds.base}/sports/basketball_nba/odds?apiKey=${CFG.odds.key}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings,fanduel,pinnacle,betmgm`;
+    const data=await apiFetch(proxied(oddsUrl),{},10000);
     if(!Array.isArray(data))throw new Error(data.message||'Bad response');
     setStatus('Odds','live',`The Odds API · ${data.length} games`);
     renderOddsTable(data);
@@ -1565,7 +1570,7 @@ async function fetchReferees(){
   setStatus('Referees','conn','Referees · Fetching…');
   const today=new Date().toLocaleDateString('en-US',{month:'2-digit',day:'2-digit',year:'numeric'});
   try {
-    const url=`https://corsproxy.io/?${encodeURIComponent(`https://stats.nba.com/stats/scoreboardv2?DayOffset=0&LeagueID=00&gameDate=${today}`)}`;
+    const url=proxied(`https://stats.nba.com/stats/scoreboardv2?DayOffset=0&LeagueID=00&gameDate=${today}`);
     const data=await apiFetch(url,{headers:{'User-Agent':'Mozilla/5.0','Referer':'https://www.nba.com'}},8000);
     const sets=data?.resultSets;
     const gameSumm=sets?.find(s=>s.name==='GameHeader');
@@ -1754,7 +1759,7 @@ function handleSearch(q){ if(!q){return;} q=q.toLowerCase(); const m=gameData.fi
 
 // API modal test buttons
 async function testBDL(){ const k=document.getElementById('bdlKeyIn').value.trim(); const st=document.getElementById('bdlSt'); if(!k){st.className='modal-st err';st.textContent='Enter key first';return;} st.className='modal-st ok';st.textContent='Testing…'; try{ const d=await apiFetch(`${CFG.bdl.base}/v1/teams?per_page=1`,{headers:{Authorization:k}},6000); if(d.data?.length){st.className='modal-st ok';st.textContent='✓ Valid! Team: '+d.data[0].full_name;}else throw new Error('Unexpected'); }catch(e){st.className='modal-st err';st.textContent='✗ '+e.message.slice(0,50);} }
-async function testOddsKey(){ const k=document.getElementById('oddsKeyIn').value.trim(); const st=document.getElementById('oddsSt'); if(!k){st.className='modal-st err';st.textContent='Enter key first';return;} st.className='modal-st ok';st.textContent='Testing…'; try{ const d=await apiFetch(`${CFG.odds.base}/sports/basketball_nba/odds?apiKey=${k}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings`,{},8000); if(Array.isArray(d)){st.className='modal-st ok';st.textContent='✓ Valid! '+d.length+' NBA games found.';}else throw new Error(d.message||'Bad'); }catch(e){st.className='modal-st err';st.textContent='✗ '+e.message.slice(0,50);} }
+async function testOddsKey(){ const k=document.getElementById('oddsKeyIn').value.trim(); const st=document.getElementById('oddsSt'); if(!k){st.className='modal-st err';st.textContent='Enter key first';return;} st.className='modal-st ok';st.textContent='Testing…'; try{ const testUrl=`${CFG.odds.base}/sports/basketball_nba/odds?apiKey=${k}&regions=us&markets=h2h&oddsFormat=american&bookmakers=draftkings`; const d=await apiFetch(proxied(testUrl),{},8000); if(Array.isArray(d)){st.className='modal-st ok';st.textContent='✓ Valid! '+d.length+' NBA games found.';}else throw new Error(d.message||'Bad'); }catch(e){st.className='modal-st err';st.textContent='✗ '+e.message.slice(0,50);} }
 function saveAPIKeys(){ const bk=document.getElementById('bdlKeyIn').value.trim(); const ok=document.getElementById('oddsKeyIn').value.trim(); if(bk)CFG.bdl.key=bk; if(ok)CFG.odds.key=ok; closeModalId('apiOverlay'); refreshAll(); }
 function renderAlertSummary(){ AlertSystem.renderAll(); }
 
